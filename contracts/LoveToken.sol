@@ -1,11 +1,13 @@
 pragma solidity ^0.4.24;
 
 import "./ERC20.sol";
+import "./EnsSubdomainFactory.sol";
 
 /**
  * @title Tenzorum Love Token
  *
- * @dev ERC20 token with a minting function executed by gasless/meta transaction - 'shareLove'
+ * @dev ERC20 token with a minting function executed by meta transaction - 'shareLove'
+ *      and a proxy function for easy subdomain registrations - 'newSubdomain'.
  *
  * @author Radek Ostrowski - radek@startonchain.com - https://tenzorum.org
  */
@@ -17,9 +19,46 @@ contract LoveToken is ERC20 {
 
     mapping (address => uint) public nonces;
 
-    function shareLove(address _to, uint256 _amount) public {
+    EnsSubdomainFactory public factory;
+    address public owner;
+
+    event SharedLove(address indexed who, address indexed with, uint256 amount);
+
+    //can only be invoked via execute function (as a meta-tx)
+    modifier onlyMetaTx() {
         require(msg.sender == address(this));
-        _mint(_to, _amount);
+        _;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner);
+        _;
+    }
+
+    constructor(EnsSubdomainFactory _factory) {
+        factory = _factory;
+        owner = msg.sender;
+    }
+
+    function shareLove(address _who, address _with, uint256 _amount) public onlyMetaTx {
+        _mint(_who, _amount);
+        _mint(_with, _amount);
+        emit SharedLove(_who, _with, _amount);
+    }
+
+    //proxy to EnsSubdomainFactory allowing to create tenz-id as a meta-tx
+    function newSubdomain(string _subdomain, string _domain, string _topdomain, address _owner, address _target) public onlyMetaTx {
+        factory.newSubdomain(_subdomain, _domain, _topdomain, _owner, _target);
+    }
+
+    function updateSubdomainFactory(EnsSubdomainFactory _newFactory) public onlyOwner {
+        require(address(factory) != address(_newFactory), "factories must be different");
+        factory = _newFactory;
+    }
+
+    function transferContractOwnership(address _newOwner) public onlyOwner {
+        require(_newOwner != address(0), "cannot transfer to address(0)");
+        owner = _newOwner;
     }
 
     function execute(
